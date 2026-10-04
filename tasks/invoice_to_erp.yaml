@@ -6,8 +6,10 @@ goal: >-
 params:
   vendor: Northwind Supplies
 context: |
-  - Supplier invoices arrive in VendorHub (/portal). Login: ops@acme.test / portal-demo.
-  - Our internal system is AcmeBooks (/erp). Login: ops / erp-demo.
+  - Supplier invoices arrive in VendorHub: sign in at /portal/login (ops@acme.test / portal-demo);
+    invoices are listed at /portal/invoices.
+  - Our internal system is AcmeBooks: sign in at /erp/login (ops / erp-demo); bills are at /erp/bills and
+    new ones are entered at /erp/bills/new.
   - Accounts-payable SOP: every supplier invoice is recorded as a Bill in AcmeBooks with vendor, invoice
     number, amount, due date (YYYY-MM-DD) and the PO number printed on the invoice. Never record an invoice twice.
   - "Latest" means the most recent issue date.
