@@ -208,6 +208,11 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Task worker runtime artifacts (traces, screenshots, sandbox db, downloads)
+runs/
+sandbox/data/
+workspace/
+
 # PyPI configuration file
 .pypirc
 
@@ -218,3 +223,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# private planning / hiring docs (kept local)
+BUILD_PLAN.md
+CentrAlign AI — Engineering Hiring.md
