@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Worker Console</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 Arial, Helvetica, sans-serif; color: #222; background: #fff; }
+  a { color: #0b5cad; }
+  header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 24px; border-bottom: 1px solid #ccc; background: #f5f5f5; }
+  header h1 { margin: 0; font-size: 18px; }
+  #spend { color: #555; }
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 24px; padding: 20px 24px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  section { margin-bottom: 24px; }
+  label { display: block; margin: 10px 0 4px; font-weight: bold; }
+  label.inline { display: block; font-weight: normal; margin: 4px 0; }
+  select, textarea, input[type=text] { width: 100%; padding: 6px 8px; font: inherit; border: 1px solid #999; border-radius: 3px; background: #fff; }
+  textarea { height: 90px; resize: vertical; }
+  fieldset { border: 1px solid #ccc; margin: 12px 0; padding: 4px 10px 8px; }
+  legend { font-weight: bold; padding: 0 4px; }
+  button { font: inherit; padding: 6px 16px; border: 1px solid #0b5cad; border-radius: 3px; background: #0b5cad; color: #fff; cursor: pointer; }
+  button.secondary { background: #fff; color: #0b5cad; }
+  button:disabled { opacity: .5; cursor: default; }
+  .muted { color: #666; }
+  .ok { color: #1a7f37; font-weight: bold; }
+  .bad { color: #cf222e; font-weight: bold; }
+  .box { border: 1px solid #ccc; padding: 12px 14px; margin-bottom: 20px; }
+  .approval { border-color: #b08800; background: #fff8c5; }
+  .mono { font: 13px Consolas, "Courier New", monospace; white-space: pre-wrap; word-break: break-word; }
+  .target { background: #fff; border: 1px solid #ccc; padding: 8px; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; vertical-align: top; padding: 5px 8px; border-bottom: 1px solid #e0e0e0; }
+  th { background: #f5f5f5; border-bottom: 1px solid #ccc; font-weight: bold; }
+  td.n { width: 44px; color: #666; }
+  td.t { width: 90px; white-space: nowrap; }
+  tr.error td { background: #fff1f0; }
+  ol { margin: 0; padding-left: 20px; }
+  li.done { color: #1a7f37; }
+  li.doing { font-weight: bold; }
+  details summary { cursor: pointer; color: #0b5cad; }
+  #timeline { max-height: 560px; overflow: auto; border: 1px solid #ccc; }
+  img { max-width: 100%; border: 1px solid #ccc; margin-top: 10px; }
+  .status-line { margin-left: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Autonomous AI Task Worker</h1>
+  <span id="spend" title="LLM spend recorded for this machine against the budget">&nbsp;</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>New task</h2>
+      <label for="task">Workflow</label>
+      <select id="task"></select>
+
+      <label for="goal">Goal</label>
+      <textarea id="goal"></textarea>
+
+      <div id="params"></div>
+
+      <fieldset>
+        <legend>Simulate failures</legend>
+        <label class="inline"><input type="checkbox" data-k="flaky" data-v="2"> Server errors (503)</label>
+        <label class="inline"><input type="checkbox" data-k="lost_response" data-v="1"> Submit saves, then returns an error</label>
+        <label class="inline"><input type="checkbox" data-k="expire_after" data-v="5"> Session expires mid-task</label>
+        <label class="inline"><input type="checkbox" data-k="drift_ui" data-v="1"> Form labels renamed</label>
+      </fieldset>
+
+      <label class="inline"><input type="checkbox" id="headed"> Show the browser window</label>
+      <p><button id="run">Run task</button><span id="msg" class="status-line muted"></span></p>
+    </section>
+
+    <section>
+      <h2>Plan</h2>
+      <ol id="plan"><li class="muted">No plan yet.</li></ol>
+    </section>
+
+    <section>
+      <h2>Facts the agent recorded</h2>
+      <div id="facts" class="muted">None yet.</div>
+    </section>
+  </div>
+
+  <div>
+    <div class="box approval" id="pending" hidden></div>
+    <div class="box" id="result" hidden></div>
+
+    <section>
+      <h2>Activity <span id="runid" class="muted"></span><span id="live" class="status-line muted"></span></h2>
+      <div id="timeline"><p class="muted" style="padding:8px">Choose a workflow and press Run task.</p></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+let tasks = [], run = null, cursor = 0, timer = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { let m = r.status; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  return r.json();
+}
+
+async function spend() {
+  const s = await api("/api/spend");
+  $("#spend").textContent = `Model: ${s.model || "n/a"}  |  Spend: $${s.spent.toFixed(4)} of $${s.budget.toFixed(2)}`;
+  if (s.server) $("#headed").closest("label").hidden = true;   // a hosted server has no display to show a window on
+}
+
+function pickTask() {
+  const t = tasks[$("#task").selectedIndex];
+  $("#goal").value = t.goal;
+  $("#params").innerHTML = Object.entries(t.params).map(([k, v]) =>
+    `<label>${esc(k)}</label><input type="text" data-p="${esc(k)}" data-default="${esc(v)}" value="${esc(v)}">`).join("");
+}
+
+$("#params").addEventListener("input", () => {   // keep the goal text in step with the parameters
+  const t = tasks[$("#task").selectedIndex];
+  let g = t.goal;
+  document.querySelectorAll("[data-p]").forEach(i => { g = g.split(i.dataset.default).join(i.value); });
+  $("#goal").value = g;
+});
+
+async function start() {
+  const t = tasks[$("#task").selectedIndex], params = {}, chaos = {};
+  document.querySelectorAll("[data-p]").forEach(i => params[i.dataset.p] = i.value);
+  document.querySelectorAll("[data-k]").forEach(i => chaos[i.dataset.k] = i.checked ? +i.dataset.v : 0);
+  $("#run").disabled = true;
+  $("#msg").textContent = "Starting...";
+  try {
+    const r = await api("/api/runs", {method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({task: t.file, goal: $("#goal").value, params, chaos, headed: $("#headed").checked})});
+    run = r.run_id; cursor = 0;
+    $("#timeline").innerHTML = '<table><thead><tr><th>Step</th><th>Event</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>';
+    $("#result").hidden = true;
+    $("#runid").textContent = "(" + run + ")";
+    $("#msg").textContent = "";
+    timer = setInterval(poll, 700);
+  } catch (e) { $("#msg").textContent = e.message; $("#run").disabled = false; }
+}
+
+const LABEL = {llm: "Agent", tool: "Action", tool_error: "Error", policy: "Policy", approval: "Approval",
+               ask_user: "Question", verify: "Verification", loop_guard: "Loop guard", run: "Run"};
+const checks = cs => cs.map(c =>
+  `<div><span class="${c.ok ? "ok" : "bad"}">${c.ok ? "PASS" : "FAIL"}</span> ${esc(c.name)} <span class="muted">- ${esc(c.detail)}</span></div>`).join("");
+
+function evRow(e) {
+  if (e.type === "policy" && e.verdict === "allow") return "";
+  let body;
+  if (e.type === "llm") body = (e.thought ? `<div>${esc(e.thought)}</div>` : "") + (e.calls || []).map(c => `<div class="mono muted">${esc(c)}</div>`).join("");
+  else if (e.type === "tool") body = `${esc(e.tool)} <span class="muted">(${e.ms} ms)</span><details><summary>Result</summary><div class="mono">${esc(e.result)}</div></details>`;
+  else if (e.type === "tool_error") body = `${esc(e.tool)}: ${esc(e.kind)} error, attempt ${e.attempt}<div class="mono">${esc(e.error)}</div>`;
+  else if (e.type === "policy") body = `<b>${esc(e.verdict.toUpperCase())}</b> ${esc(e.tool)}: ${esc(e.reason)}<div class="mono muted">${esc(e.target)}</div>`;
+  else if (e.type === "approval") body = `${e.approved ? "Approved" : "Denied"}: ${esc(e.note)}`;
+  else if (e.type === "ask_user") body = `Q: ${esc(e.question)}<br>A: ${esc(e.answer)}`;
+  else if (e.type === "verify") body = e.checks ? checks(e.checks) : esc(e.error);
+  else if (e.type === "loop_guard") body = `Blocked a repeated ${esc(e.tool)} call.`;
+  else body = `<span class="mono muted">${esc(JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !["ts", "step", "type"].includes(k)))))}</span>`;
+  const bad = e.type === "tool_error" || e.type === "loop_guard" || (e.type === "policy" && e.verdict === "deny");
+  return `<tr class="${bad ? "error" : ""}"><td class="n">${e.step}</td><td class="t">${LABEL[e.type] || esc(e.type)}</td><td>${body}</td></tr>`;
+}
+
+function showPending(p) {
+  const box = $("#pending");
+  if (!p) { box.hidden = true; box.dataset.key = ""; return; }
+  const key = JSON.stringify(p);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.hidden = false;
+  box.innerHTML = p.kind === "approval"
+    ? `<h2>Approval required</h2><div>${esc(p.reason)}</div>
+       <div class="target mono">${esc(p.tool)} ${esc(JSON.stringify(p.args))}\n${esc(p.desc)}</div>
+       <input type="text" id="note" placeholder="Optional note for the agent">
+       <p><button id="ok">Approve</button> <button class="secondary" id="no">Deny</button></p>`
+    : `<h2>The agent has a question</h2><div>${esc(p.question)}</div>
+       <p><input type="text" id="note" placeholder="Your answer"></p>
+       <p><button id="ok">Send answer</button></p>`;
+  const send = body => api(`/api/runs/${run}/answer`, {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify(body)}).then(() => showPending(null)).catch(e => alert(e.message));
+  $("#ok").onclick = () => send(p.kind === "approval" ? {approved: true, note: $("#note").value} : {text: $("#note").value});
+  if ($("#no")) $("#no").onclick = () => send({approved: false, note: $("#note").value});
+}
+
+function showState(s) {
+  if (!s) return;
+  $("#plan").innerHTML = s.plan.length
+    ? s.plan.map(p => `<li class="${p.status}">${esc(p.step)} <span class="muted">(${p.status})</span></li>`).join("")
+    : '<li class="muted">No plan yet.</li>';
+  const f = Object.entries(s.facts);
+  $("#facts").innerHTML = f.length
+    ? f.map(([k, v]) => `<div><b>${esc(k)}</b>: ${esc(v.value)} <span class="muted">(source: ${esc(v.source)})</span></div>`).join("")
+    : "None yet.";
+  $("#live").textContent = s.status === "running" ? `Running: step ${s.step}, $${s.cost.toFixed(4)}` : "";
+}
+
+function showResult(d) {
+  const s = d.state || {status: "failed", outcome: "", step: 0, cost: 0}, v = d.result.verdict, box = $("#result");
+  const good = s.status === "done" && v && v.ok;
+  box.hidden = false;
+  box.innerHTML = `<h2>Result: <span class="${good ? "ok" : "bad"}">${esc(s.status.toUpperCase())}</span></h2>
+    <div class="muted">${s.step} steps, $${s.cost.toFixed(4)} &middot; <a href="/runs/${run}/report.md" target="_blank">Full report</a></div>
+    <p>${esc(s.outcome)}</p>
+    ${d.result.error ? `<p class="bad">${esc(d.result.error)}</p>` : ""}
+    <h2>Independent verification</h2>
+    ${v ? checks(v.checks) : '<div class="muted">No postconditions defined for this task.</div>'}
+    ${d.evidence.map(n => `<div><img src="/runs/${run}/${n}" alt="${esc(n)}"></div>`).join("")}`;
+}
+
+async function poll() {
+  let d;
+  try { d = await api(`/api/runs/${run}?after=${cursor}`); } catch { return; }   // transient: next tick retries
+  cursor = d.next;
+  const rows = $("#rows");
+  if (rows && d.events.length) { rows.insertAdjacentHTML("beforeend", d.events.map(evRow).join("")); $("#timeline").scrollTop = 1e9; }
+  showPending(d.pending); showState(d.state); spend();
+  if (d.result) { clearInterval(timer); showResult(d); $("#live").textContent = ""; $("#run").disabled = false; }
+}
+
+(async () => {
+  tasks = await api("/api/tasks");
+  $("#task").innerHTML = tasks.map(t => `<option>${esc(t.id)}</option>`).join("");
+  $("#task").onchange = pickTask;
+  pickTask();
+  $("#run").onclick = start;
+  spend();
+})();
+</script>
+</body>
+</html>
