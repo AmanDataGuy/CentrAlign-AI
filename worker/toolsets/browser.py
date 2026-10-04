@@ -14,6 +14,13 @@ from pydantic import Field
 from ..tools import ToolError, tool
 
 MAX_SNAPSHOT = 12_000
+ALLOWED_PATH = re.compile(r"^/(portal|erp)(/|$)")   # the company apps only
+
+
+def reachable(url: str, origin: str) -> bool:
+    """The agent's browser may load the company apps and nothing else: not the operator console, its API,
+    admin routes or docs, even when they share the same host and port."""
+    return url.startswith(origin + "/") and bool(ALLOWED_PATH.match(urlparse(url).path))
 Ref = Annotated[str, Field(description="Element ref from the latest snapshot, e.g. 'e12' or 'f2e15'")]
 
 
@@ -27,7 +34,7 @@ class Session:
         self.page = self.browser.new_page()
         self.page.set_default_timeout(8000)
         # network allowlist for EVERY request (clicks, redirects, images, beacons), not just browser_open
-        self.page.context.route("**/*", lambda r: r.continue_() if r.request.url.startswith(origin + "/") else r.abort())
+        self.page.context.route("**/*", lambda r: r.continue_() if reachable(r.request.url, origin) else r.abort())
         self.snapshot, self.url, self.fills = "", "", {}
 
     def close(self):
@@ -97,8 +104,8 @@ def describe_fill(ctx, args):
 def browser_open(ctx, url: Annotated[str, Field(description="Absolute URL or path like /erp/bills")]):
     """Navigate to a URL inside the company sandbox and return the page snapshot."""
     full = urljoin(ctx.sandbox_url + "/", url)
-    if urlparse(full).netloc != urlparse(ctx.sandbox_url).netloc:
-        raise ToolError("bad_args", f"Only the company environment {ctx.sandbox_url} is reachable.")
+    if not reachable(full, ctx.sandbox_url.rstrip("/")):
+        raise ToolError("bad_args", f"Only the company apps are reachable: paths under /portal and /erp on {ctx.sandbox_url}.")
     resp = session(ctx).page.goto(full)
     if resp and resp.status >= 500:
         raise ToolError("transient", f"HTTP {resp.status} from {full}")
