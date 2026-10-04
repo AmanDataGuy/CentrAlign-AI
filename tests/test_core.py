@@ -104,6 +104,20 @@ def test_spend_guard_stops_run_at_budget(tmp_path, monkeypatch):
     assert state.step == 0 and "No known price" in state.outcome
 
 
+def test_browser_may_only_reach_company_apps():
+    from worker.toolsets.browser import reachable
+    o = "http://127.0.0.1:10000"
+    for path in ("/portal/login", "/portal/invoices?vendor=Northwind", "/erp/bills/new", "/erp"):
+        assert reachable(o + path, o), path
+    # the hosted console shares this origin: none of its pages, API or admin routes may load
+    for path in ("/", "/api/spend", "/api/runs/x", "/runs/x/report.md", "/_admin/reset", "/openapi.json", "/docs",
+                 "/portalx", "//evil.example/portal/login"):
+        assert not reachable(o + path, o), path
+    for url in ("http://evil.example/portal/login", "http://127.0.0.1:10000.evil.example/portal/login",
+                "http://127.0.0.1:8000/portal/login"):
+        assert not reachable(url, o), url
+
+
 def test_budget_exhaustion_denies():
     st = _state()
     st.step = SPEC.max_steps + 1
