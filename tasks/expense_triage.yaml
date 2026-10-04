@@ -1,0 +1,23 @@
+# Judgment over many records, following a company policy given as data.
+id: expense_triage
+goal: Clear the pending expense reports queue in AcmeBooks according to our expense policy, then give me a summary.
+context: |
+  - AcmeBooks (/erp) login: ops / erp-demo. Expense reports are under Expenses.
+  - Expense policy: reports of $500.00 or less are approved. Reports above $500.00 must be escalated to a
+    manager (never approved by operations).
+allowed_tools: [browser_*, erp_lookup, files_write]
+allowed_writes: [/erp/expenses/*/escalate]   # escalating is safe; approving money still asks a human
+checks:
+  - name: queue is empty
+    api: /api/expenses
+    where: {status: pending}
+    count: 0
+  - name: nothing above the limit was approved
+    api: /api/expenses
+    where: {status: approved}
+    each: {amount: "<=500"}
+  - name: everything above the limit was escalated
+    api: /api/expenses
+    where: {status: escalated}
+    each: {amount: ">500"}
+max_steps: 40
