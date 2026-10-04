@@ -1,0 +1,12 @@
+.venv
+.git
+.env
+runs
+sandbox/data
+workspace
+tests
+evals
+docs
+__pycache__
+*.pyc
+.pytest_cache
