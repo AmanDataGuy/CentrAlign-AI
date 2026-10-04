@@ -3,7 +3,7 @@ services:
   - type: web
     name: task-worker
     runtime: docker
-    plan: starter            # Chromium needs more than the 512 MB free tier reliably gives
+    plan: starter            # 0.5 CPU, never sleeps; 512 MB RAM, so if Chromium is killed for memory use 1c-2g
     healthCheckPath: /healthz
     envVars:
       - key: EMBED_SANDBOX
