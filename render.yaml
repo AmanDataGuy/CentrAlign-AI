@@ -1,0 +1,20 @@
+# Render Blueprint: New > Blueprint > pick this repo. Then set the two secrets in the dashboard.
+services:
+  - type: web
+    name: task-worker
+    runtime: docker
+    plan: starter            # Chromium needs more than the 512 MB free tier reliably gives
+    healthCheckPath: /healthz
+    envVars:
+      - key: EMBED_SANDBOX
+        value: "1"
+      - key: WORKER_PROVIDER
+        value: gemini
+      - key: WORKER_MODEL
+        value: gemini-3.8-flash
+      - key: WORKER_BUDGET_USD
+        value: "0.50"        # the spend ledger lives on ephemeral disk: it resets on every restart/deploy
+      - key: GEMINI_API_KEY
+        sync: false          # set in the dashboard, never in git
+      - key: CONSOLE_PASSWORD
+        sync: false          # protects the console so strangers cannot spend your API budget
