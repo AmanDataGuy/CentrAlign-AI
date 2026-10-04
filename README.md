@@ -24,7 +24,7 @@ a scripted stand-in drives the agent so the numbers measure the **runtime's guar
 | Wrong final states caught by the verifier (off-by-1-cent, off-by-1-day, wrong PO, older invoice, wrong vendor, nothing entered, side-effect tampering) | **7 / 7** |
 | Prompt-injected consequential writes that executed with **no human in the loop** (756 encodings × relabelled buttons) | **0 / 756** (750 blocked outright, 6 escalated to a human) |
 | End-to-end: model obeys the injection *and* the approver rubber-stamps everything | **0 bank changes** (blocked before a human was asked) |
-| Offline test suite | **24 tests passing** |
+| Offline test suite | **25 tests passing** |
 | **Live run, real LLM** (`gemini-3.8-flash`, invoice task, clean world): independently verified | **PASS** — 33 steps, 0 tool errors, 271,670 in / 3,095 out tokens, **$0.22** |
 
 Full tables: [`evals/stress.md`](evals/stress.md). Model-quality evals with a real LLM (pass^k per task × chaos
@@ -79,7 +79,7 @@ postconditions) and maybe a new tool. Three different tasks run on identical age
 | `worker/llm.py` | Thin provider adapters (no framework) + scripted test double | ~120 |
 | `sandbox/` | The simulated company: two web apps, a JSON API and a chaos layer | ~490 |
 | `tasks/*.yaml` | Three workflows as data | |
-| `tests/` | 24 offline tests incl. end-to-end runs through the real browser + sandbox | |
+| `tests/` | 25 offline tests incl. end-to-end runs through the real browser + sandbox | |
 | `evals/run.py` | Tasks × chaos × k trials with a real LLM → pass^k, false successes, unauthorized writes | |
 
 ## How the requested capabilities map to the code
@@ -161,7 +161,7 @@ Each run writes `runs/<run_id>/` — `report.md` (human summary + evidence), `tr
 `state.json` (resumable), screenshots.
 
 ```bash
-pytest                       # 24 tests, offline (no API key): policy, verifier, idempotency, adapters, and
+pytest                       # 25 tests, offline (no API key): policy, verifier, idempotency, adapters, and
                              # end-to-end runs through the real browser + sandbox with a scripted stand-in LLM
 python -m evals.stress       # deterministic reliability benchmark (no key, ~9 min) -> evals/stress.md
 python -m evals.run -k 3     # real LLM: every task × chaos condition × 3 trials -> evals/results.md
@@ -191,7 +191,10 @@ the ledger lives on ephemeral disk and resets when the service restarts.
    form. A form POST is judged by **where it submits**, not by its label: each task pre-authorizes its routine writes
    (`allowed_writes: [/erp/bills]`); any other write asks a human, even if a drifted UI renamed the button "Save".
    Risk is declared by us, not by tools (MCP-style annotations are untrusted hints). The browser also has a network
-   allowlist on every request, so clicks and redirects can't leave the company environment.
+   allowlist on every request: only the company apps (`/portal`, `/erp`) can load, so clicks and redirects can't leave
+   them, and on the hosted deployment (where the operator console shares the same host) the agent's browser cannot
+   reach the console, its API or its approval buttons. The console also trusts nothing by IP address: its own calls
+   to the sandbox carry a per-process token, everything else needs the password.
 3. **Provenance gate for prompt injection.** If a consequential action's values appear in untrusted content
    (web pages, files) but not in the user's request or company context, it is **denied outright** — before any
    human is asked, so a tired approver can't click it through. (Meta's "Rule of Two" / Willison's "lethal trifecta":
