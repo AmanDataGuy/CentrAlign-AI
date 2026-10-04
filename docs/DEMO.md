@@ -45,7 +45,7 @@ The approval prompt shows the *grounded* action (`button "Update bank details"` 
 python -m worker run tasks/expense_triage.yaml --approve yes
 pytest -q
 ```
-Same core, different workflow (policy-driven decisions over records). `pytest`: 18 offline tests, including an agent
+Same core, different workflow (policy-driven decisions over records). `pytest`: 25 offline tests, including an agent
 that lies about finishing and the ablation showing that without the verifier the lie counts as success.
 If you ran `python -m evals.run`, show `evals/results.md`.
 
