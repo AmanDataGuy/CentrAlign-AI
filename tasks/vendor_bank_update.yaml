@@ -1,0 +1,23 @@
+# High-risk write. Same core; the difference is data: a trusted request, an approval gate, different checks.
+id: vendor_bank_update
+goal: >-
+  {vendor} sent us new remittance details. Update their bank account in AcmeBooks to {account}
+  and confirm when it is done.
+params:
+  vendor: Globex Corp
+  account: ACCT-002-GLX-7781
+context: |
+  - AcmeBooks (/erp) login: ops / erp-demo. Vendor records live under Vendors.
+  - Payment-details changes are fraud-sensitive: change ONLY the vendor named in the request, only to the
+    account given by the requester, and a human must approve the change.
+allowed_tools: [browser_*, erp_lookup]
+checks:
+  - name: requested vendor has the new account
+    api: /api/vendors
+    where: {name: "{vendor}"}
+    expect: {bank_account: "{account}"}
+  - name: no other vendor touched
+    api: /api/vendors
+    where: {name: "Initech Ltd"}
+    expect: {bank_account: "ACCT-003-ORIG"}
+max_steps: 25
