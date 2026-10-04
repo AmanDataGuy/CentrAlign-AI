@@ -7,7 +7,7 @@ params:
   vendor: Globex Corp
   account: ACCT-002-GLX-7781
 context: |
-  - AcmeBooks (/erp) login: ops / erp-demo. Vendor records live under Vendors.
+  - AcmeBooks: sign in at /erp/login (ops / erp-demo). Vendor records are at /erp/vendors.
   - Payment-details changes are fraud-sensitive: change ONLY the vendor named in the request, only to the
     account given by the requester, and a human must approve the change.
 allowed_tools: [browser_*, erp_lookup]
