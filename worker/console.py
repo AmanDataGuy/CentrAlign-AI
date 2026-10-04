@@ -37,13 +37,19 @@ busy = threading.Lock()
 live: dict[str, "Bridge"] = {}
 
 
+INTERNAL = secrets.token_hex(16)            # how the console's own calls identify themselves (never an IP address)
+INTERNAL_HEADERS = {"x-internal": INTERNAL}
+
+
 @app.middleware("http")
 async def password_gate(request: Request, call_next):
     """If CONSOLE_PASSWORD is set, the console and the sandbox admin routes need HTTP Basic auth (any username).
-    Loopback calls (the worker talking to its own sandbox) are exempt; the sandbox's mock apps stay open."""
+    The sandbox's mock apps stay open. Nothing is trusted because of where it comes from: the agent's own browser
+    also connects from this machine, so only the per-process token (or the password) gets through."""
     pw, path = os.environ.get("CONSOLE_PASSWORD"), request.url.path
     guarded = path == "/" or path.startswith(GUARDED)
-    if pw and guarded and (request.client is None or request.client.host != "127.0.0.1"):
+    internal = secrets.compare_digest(request.headers.get("x-internal", "").encode(), INTERNAL.encode())
+    if pw and guarded and not internal:
         auth = request.headers.get("authorization", "")
         try:
             given = base64.b64decode(auth[6:]).decode().partition(":")[2] if auth.startswith("Basic ") else ""
@@ -126,9 +132,9 @@ def start(req: RunRequest):
         spec = TaskSpec.load(TASKS / Path(req.task).name, req.params)
         if req.goal.strip() and req.goal.strip() != spec.goal_text:
             spec.goal = req.goal.strip().replace("{", "{{").replace("}", "}}")
-        httpx.post(f"{SANDBOX}/_admin/reset", timeout=10)
+        httpx.post(f"{SANDBOX}/_admin/reset", headers=INTERNAL_HEADERS, timeout=10)
         if active := {k: v for k, v in req.chaos.items() if v}:
-            httpx.post(f"{SANDBOX}/_admin/chaos", json=active, timeout=10)
+            httpx.post(f"{SANDBOX}/_admin/chaos", json=active, headers=INTERNAL_HEADERS, timeout=10)
         llm = llm_mod.from_env()
     except Exception as e:
         busy.release()
@@ -207,6 +213,5 @@ if __name__ == "__main__":
         db.reset()
         embed_sandbox()
     print(f"Task worker console on port {PORT}  (sandbox at {SANDBOX}{' - embedded' if EMBED else ''})")
-    # proxy_headers off: the loopback exemption in password_gate must never be spoofable via X-Forwarded-For
     uvicorn.run(app, host="0.0.0.0" if "PORT" in os.environ else "127.0.0.1", port=PORT, log_level="warning",
                 proxy_headers=False)
