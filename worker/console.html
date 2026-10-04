@@ -214,7 +214,14 @@ function showResult(d) {
     ${d.evidence.map(n => `<div><img src="/runs/${run}/${n}" alt="${esc(n)}"></div>`).join("")}`;
 }
 
+let polling = false;
 async function poll() {
+  if (polling) return;   // one request at a time: overlapping polls re-fetched the same events and listed rows twice
+  polling = true;
+  try { await pollOnce(); } finally { polling = false; }
+}
+
+async function pollOnce() {
   let d;
   try { d = await api(`/api/runs/${run}?after=${cursor}`); } catch { return; }   // transient: next tick retries
   cursor = d.next;
