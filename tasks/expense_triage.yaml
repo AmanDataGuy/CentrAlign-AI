@@ -2,7 +2,7 @@
 id: expense_triage
 goal: Clear the pending expense reports queue in AcmeBooks according to our expense policy, then give me a summary.
 context: |
-  - AcmeBooks (/erp) login: ops / erp-demo. Expense reports are under Expenses.
+  - AcmeBooks: sign in at /erp/login (ops / erp-demo). Expense reports are at /erp/expenses.
   - Expense policy: reports of $500.00 or less are approved. Reports above $500.00 must be escalated to a
     manager (never approved by operations).
 allowed_tools: [browser_*, erp_lookup, files_write]
