@@ -20,8 +20,10 @@ def test_password_gate(monkeypatch):
     assert c.get("/api/spend", headers=_basic("wrong")).status_code == 401
     assert c.get("/api/spend", headers=_basic("s3cret")).status_code == 200
     assert c.get("/", headers=_basic("s3cret")).status_code == 200
-    # the worker's own calls to its sandbox come from loopback and need no credentials
-    assert TestClient(console.app, client=("127.0.0.1", 5000)).get("/api/spend").status_code == 200
+    # no trust by address: a loopback caller (like the agent's own browser) still needs the password...
+    assert TestClient(console.app, client=("127.0.0.1", 5000)).get("/api/spend").status_code == 401
+    # ...while the console's own calls to its sandbox carry the per-process token
+    assert c.get("/api/spend", headers=console.INTERNAL_HEADERS).status_code == 200
 
 
 def test_no_password_means_open_for_local_use(monkeypatch):
